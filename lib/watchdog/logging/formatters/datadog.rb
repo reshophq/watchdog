@@ -20,6 +20,8 @@ module Watchdog
           rescue LoadError
             raise 'Usage of the Datadog formatter requires the ddtrace gem'
           end
+
+          @param_filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
         end
 
         # rubocop:disable Metrics/MethodLength
@@ -95,7 +97,9 @@ module Watchdog
         def format_attributes(attributes)
           return '' if attributes.empty?
 
-          flatten_attributes(**attributes).map do |key, value|
+          flatten = flatten_attributes(**attributes)
+          filtered = @param_filter.filter(flatten)
+          filtered.map do |key, value|
             "#{key}=#{value}"
           end.join(' ')
         end
@@ -110,10 +114,18 @@ module Watchdog
               flatten_attributes(**value).each do |nested_key, nested_value|
                 flattened_attributes["#{key}.#{nested_key}".to_sym] = nested_value
               end
+            elsif value.is_a?(Array)
+              flattened_attributes[key.to_sym] = flatten_array(value)
+            elsif value.is_a?(ActiveRecord::Base)
+              flattened_attributes[key.to_sym] = value.as_json
             else
               flattened_attributes[key.to_sym] = value
             end
           end
+        end
+
+        def flatten_array(arr)
+          arr.map.with_index { |args, i| [i.to_s, flatten_attributes(**args)] }.to_h
         end
       end
     end
