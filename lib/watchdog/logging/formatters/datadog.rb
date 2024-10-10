@@ -20,8 +20,6 @@ module Watchdog
           rescue LoadError
             raise 'Usage of the Datadog formatter requires the ddtrace gem'
           end
-
-          @param_filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
         end
 
         # rubocop:disable Metrics/MethodLength
@@ -44,6 +42,8 @@ module Watchdog
 
           "#{JSON.dump(payload)}\n"
         rescue StandardError => e
+          puts e
+          puts e.backtrace
           Rails.logger.debug e.backtrace.join("\n")
         end
         # rubocop:enable Metrics/MethodLength
@@ -97,9 +97,8 @@ module Watchdog
         def format_attributes(attributes)
           return '' if attributes.empty?
 
-          flatten = flatten_attributes(**attributes)
-          filtered = @param_filter.filter(flatten)
-          filtered.map do |key, value|
+          flatten = flatten_attributes(attributes)
+          flatten.map do |key, value|
             "#{key}=#{value}"
           end.join(' ')
         end
@@ -108,24 +107,33 @@ module Watchdog
         # { foo: 'bar', baz: { qux: 'quux' } }
         # returns
         # { foo: 'bar', 'baz.qux': 'quux' }
-        def flatten_attributes(**attributes)
-          attributes.each_with_object({}) do |(key, value), flattened_attributes|
-            if value.is_a?(Hash)
-              flatten_attributes(**value).each do |nested_key, nested_value|
-                flattened_attributes["#{key}.#{nested_key}".to_sym] = nested_value
-              end
-            elsif value.is_a?(Array)
-              flattened_attributes[key.to_sym] = flatten_array(value)
-            elsif value.is_a?(ActiveRecord::Base)
-              flattened_attributes[key.to_sym] = value.as_json
-            else
-              flattened_attributes[key.to_sym] = value
+        def flatten_attributes(value, parent_key: nil, ref: {})
+          case value
+          when Hash
+            value.each do |k, v|
+              flatten_attributes(v, parent_key: make_key(parent_key, k), ref: ref)
             end
+          when Array
+            flatten_array(value, parent_key, ref: ref)
+          else
+            if defined?(ActiveRecord::Base) && value.is_a?(ActiveRecord::Base)
+              ref[parent_key || :record] = value.as_json
+            else
+              ref[parent_key || :node] = value
+            end
+          end
+
+          ref
+        end
+
+        def flatten_array(value, key = 'arr_args', ref:)
+          value.each_with_index do |elem, idx|
+            flatten_attributes(elem, parent_key: make_key(key, idx), ref: ref)
           end
         end
 
-        def flatten_array(arr)
-          arr.map.with_index { |args, i| [i.to_s, flatten_attributes(**args)] }.to_h
+        def make_key(*keys)
+          keys.compact.join('.').to_sym
         end
       end
     end
