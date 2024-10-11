@@ -118,7 +118,7 @@ module Watchdog
             flatten_array(value, parent_key, ref: ref)
           else
             if defined?(ActiveRecord::Base) && value.is_a?(ActiveRecord::Base)
-              ref[parent_key || :record] = value.as_json
+              flatten_attributes(value.as_json, parent_key: parent_key || :record, ref: ref)
             else
               ref[parent_key || :node] = value
             end

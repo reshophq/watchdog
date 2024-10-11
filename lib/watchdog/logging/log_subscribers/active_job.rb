@@ -59,7 +59,7 @@ module Watchdog
             action,
             {
               class: job.class,
-              arguments: job.arguments&.join(', '),
+              arguments: job.arguments,
               queue: job.queue_name,
               id: job.job_id
             }
