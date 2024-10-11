@@ -137,4 +137,31 @@ RSpec.describe Watchdog::Logging::Formatters::Datadog do
 
     expect(result).to eq expected
   end
+
+  context 'with transformers' do
+    subject(:formatter) { described_class.new(attribute_transformer: transformer) }
+
+    let(:transformer) do
+      ->(h) { h.transform_values { |v| v.to_s.upcase } }
+    end
+
+    it 'transforms' do
+      event = Watchdog::Event.new(
+        event:      'hi',
+        attributes: {
+          a: 'a',
+          b: [1, { c: { d: 'd' } }]
+        })
+      log   = formatter.call('INFO', time, nil, event)
+
+      result   = JSON.parse(log, symbolize_names: true)
+      expected = {
+        status:    'INFO',
+        message:   'hi a=A b.0=1 b.1.c.d=D',
+        timestamp: '2019-10-19T00:00:00.000Z'
+      }.merge(meta)
+
+      expect(result).to eq expected
+    end
+  end
 end

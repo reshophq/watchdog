@@ -49,7 +49,9 @@ module Watchdog
         case app.config.watchdog.log_formatter
         when :datadog
           require 'watchdog/logging/formatters/datadog'
-          Rails.logger.formatter = Watchdog::Logging::Formatters::Datadog.new
+          Rails.logger.formatter = Watchdog::Logging::Formatters::Datadog.new(
+            attribute_transformer: app.config.watchdog.attribute_transformer
+          )
         when :simple
           require 'watchdog/logging/formatters/simple'
           Rails.logger.formatter = Watchdog::Logging::Formatters::Simple.new

@@ -10,8 +10,8 @@ module Watchdog
       class Datadog < ::Logger::Formatter
         DD_SOURCE = 'ruby'
 
-        def initialize
-          super
+        def initialize(attribute_transformer: nil)
+          super()
 
           require 'json'
 
@@ -20,6 +20,8 @@ module Watchdog
           rescue LoadError
             raise 'Usage of the Datadog formatter requires the ddtrace gem'
           end
+
+          @attribute_transformer = attribute_transformer if attribute_transformer.respond_to?(:call)
         end
 
         # rubocop:disable Metrics/MethodLength
@@ -42,8 +44,6 @@ module Watchdog
 
           "#{JSON.dump(payload)}\n"
         rescue StandardError => e
-          puts e
-          puts e.backtrace
           Rails.logger.debug e.backtrace.join("\n")
         end
         # rubocop:enable Metrics/MethodLength
@@ -97,8 +97,9 @@ module Watchdog
         def format_attributes(attributes)
           return '' if attributes.empty?
 
-          flatten = flatten_attributes(attributes)
-          flatten.map do |key, value|
+          attrs = flatten_attributes(attributes)
+          attrs = @attribute_transformer.call(attrs) if @attribute_transformer
+          attrs.map do |key, value|
             "#{key}=#{value}"
           end.join(' ')
         end
