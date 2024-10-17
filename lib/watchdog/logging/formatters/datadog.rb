@@ -10,8 +10,8 @@ module Watchdog
       class Datadog < ::Logger::Formatter
         DD_SOURCE = 'ruby'
 
-        def initialize
-          super
+        def initialize(attribute_transformer: nil)
+          super()
 
           require 'json'
 
@@ -20,6 +20,8 @@ module Watchdog
           rescue LoadError
             raise 'Usage of the Datadog formatter requires the ddtrace gem'
           end
+
+          @attribute_transformer = attribute_transformer if attribute_transformer.respond_to?(:call)
         end
 
         # rubocop:disable Metrics/MethodLength
@@ -95,7 +97,9 @@ module Watchdog
         def format_attributes(attributes)
           return '' if attributes.empty?
 
-          flatten_attributes(**attributes).map do |key, value|
+          attrs = flatten_attributes(attributes)
+          attrs = @attribute_transformer.call(attrs) if @attribute_transformer
+          attrs.map do |key, value|
             "#{key}=#{value}"
           end.join(' ')
         end
@@ -104,16 +108,33 @@ module Watchdog
         # { foo: 'bar', baz: { qux: 'quux' } }
         # returns
         # { foo: 'bar', 'baz.qux': 'quux' }
-        def flatten_attributes(**attributes)
-          attributes.each_with_object({}) do |(key, value), flattened_attributes|
-            if value.is_a?(Hash)
-              flatten_attributes(**value).each do |nested_key, nested_value|
-                flattened_attributes["#{key}.#{nested_key}".to_sym] = nested_value
-              end
+        def flatten_attributes(value, parent_key: nil, ref: {})
+          case value
+          when Hash
+            value.each do |k, v|
+              flatten_attributes(v, parent_key: make_key(parent_key, k), ref: ref)
+            end
+          when Array
+            flatten_array(value, parent_key, ref: ref)
+          else
+            if defined?(ActiveRecord::Base) && value.is_a?(ActiveRecord::Base)
+              flatten_attributes(value.as_json, parent_key: parent_key || :record, ref: ref)
             else
-              flattened_attributes[key.to_sym] = value
+              ref[parent_key || :node] = value
             end
           end
+
+          ref
+        end
+
+        def flatten_array(value, key = 'arr_args', ref:)
+          value.each_with_index do |elem, idx|
+            flatten_attributes(elem, parent_key: make_key(key, idx), ref: ref)
+          end
+        end
+
+        def make_key(*keys)
+          keys.compact.join('.').to_sym
         end
       end
     end
